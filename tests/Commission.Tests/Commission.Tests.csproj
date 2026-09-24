@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Services\Commission\Commission.Api\Commission.Api.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Commission.Api": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development" }
+    }
+  }
+}
