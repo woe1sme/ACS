@@ -55,6 +55,10 @@ powershell -ExecutionPolicy Bypass -File scripts\smoke-test.ps1
 
 Чтобы посмотреть путь события: запустите сквозную проверку (или отправьте `POST /events`), откройте **Traces** и выберите трейс `Activity.Api: POST /events`.
 
+Трейс одного события (`profit = 200`, у владельца два партнёра): Activity принимает событие → RabbitMQ → Commission получает цепочку у Partners по gRPC и начисляет комиссии → RabbitMQ → Wallet.
+
+![Трейс события в Aspire Dashboard](docs/images/trace-flow.png)
+
 Телеметрия хранится в памяти контейнера и пропадает при его перезапуске. Дашборд открыт без входа — только для локального запуска.
 
 ## API
