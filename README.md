@@ -1,104 +1,33 @@
 # ACS — система партнёрских отчислений
 
-Набор микросервисов на .NET 8, который начисляет и выплачивает партнёрские комиссии по иерархии пользователей.
+Микросервисы на .NET 8, которые начисляют партнёрские комиссии по цепочке пользователей и периодически выплачивают их на кошелёк.
 
-| Сервис | Отвечает за | REST (снаружи) | gRPC (внутри) |
-|---|---|---|---|
-| **Partners** | пользователи и дерево партнёров | `:5101` | `:8081` `GetAncestors` |
-| **Activity** | приём событий прибыли/убытка, просмотр событий | `:5102` | — |
-| **Commission** | схемы начисления, расчёт и хранение комиссий | `:5103` | `:8081` `GetCommissionsForEvent` |
-| **Wallet** | накопление, периодическая выплата, баланс, история | `:5104` | — |
+| Сервис | Отвечает за | REST |
+|---|---|---|
+| [Partners](src/Services/Partners/README.md) | пользователи и дерево партнёров | `localhost:5101` |
+| [Activity](src/Services/Activity/README.md) | приём и просмотр событий прибыли/убытка | `localhost:5102` |
+| [Commission](src/Services/Commission/README.md) | схемы Linear/Fibonacci, расчёт комиссий | `localhost:5103` |
+| [Wallet](src/Services/Wallet/README.md) | накопление, выплата, баланс, история | `localhost:5104` |
 
-У каждого сервиса своя БД Postgres. Асинхронное взаимодействие идёт через RabbitMQ (MassTransit с transactional outbox), синхронные внутренние чтения — через gRPC. Архитектура и принятые решения описаны в [ARCHITECTURE.md](ARCHITECTURE.md).
+У каждого сервиса своя БД Postgres. Изменения между сервисами идут событиями через RabbitMQ (MassTransit + transactional outbox), синхронные чтения — через gRPC. API, сообщения и настройки каждого сервиса описаны в его README; устройство системы и принятые решения — в [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Быстрый старт
+## Запуск
 
 Нужен Docker (Compose v2).
 
 ```bash
 docker compose up --build -d
-docker compose ps          # все контейнеры должны стать healthy
-./scripts/smoke-test.sh    # сквозная проверка: bash + curl + python
+docker compose ps    # дождитесь, пока все контейнеры станут healthy
 ```
 
-На Windows — PowerShell-версия той же проверки (ничего ставить не нужно):
+Сквозная проверка строит цепочку пользователей и проверяет обе схемы, переключение схемы без пересчёта старых комиссий, идемпотентность, отсутствие комиссий за убыток, выплату и баланс:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\smoke-test.ps1
+```bash
+./scripts/smoke-test.sh                                            # bash + curl + python
+powershell -ExecutionPolicy Bypass -File scripts\smoke-test.ps1    # Windows
 ```
 
-Сквозная проверка строит цепочку из пяти пользователей и проверяет:
-
-- расчёт по схемам Linear и Fibonacci;
-- переключение схемы: старые комиссии не пересчитываются;
-- идемпотентность приёма событий;
-- что убыток не даёт комиссий;
-- выплату и баланс кошелька.
-
-В compose выплата запускается раз в 15 секунд (`Payout__Interval`), по умолчанию — раз в минуту.
-
-Наружу публикуются порты:
-
-- 5101–5104 — REST сервисов;
-- 5672 и 15672 — RabbitMQ (management UI: `guest` / `guest`);
-- 18888 — Aspire Dashboard.
-
-Базы данных и gRPC-порты наружу не публикуются.
-
-## Наблюдение за системой
-
-**Aspire Dashboard** — http://localhost:18888. Это отдельный контейнер в том же compose (только UI телеметрии, не оркестратор): сервисы отправляют в него трейсы, логи и метрики по OpenTelemetry (OTLP, переменная `OTEL_EXPORTER_OTLP_ENDPOINT`).
-
-- **Traces** — одно событие видно одной цепочкой: `POST /events` в Activity → outbox → RabbitMQ → Commission (consume, gRPC `GetAncestors` в Partners, запросы в БД) → `CommissionAccrued` → Wallet. Фоновый опрос БД (доставка outbox) в трейсы не попадает, чтобы не засорять список.
-- **Structured logs** — логи всех сервисов с фильтром по сервису, уровню и trace id; из строки лога можно перейти в её трейс.
-- **Metrics** — HTTP, gRPC, MassTransit, .NET runtime, счётчики выплат Wallet.
-
-Чтобы посмотреть путь события: запустите сквозную проверку (или отправьте `POST /events`), откройте **Traces** и выберите трейс `Activity.Api: POST /events`.
-
-Трейс одного события (`profit = 200`, у владельца два партнёра): Activity принимает событие → RabbitMQ → Commission получает цепочку у Partners по gRPC и начисляет комиссии → RabbitMQ → Wallet.
-
-![Трейс события в Aspire Dashboard](docs/images/trace-flow.png)
-
-Телеметрия хранится в памяти контейнера и пропадает при его перезапуске. Дашборд открыт без входа — только для локального запуска.
-
-## API
-
-Ошибки возвращаются в формате RFC 9457 Problem Details с `traceId`. Коды: 400 — валидация, 404 — не найдено, 409 — конфликт, 503 — зависимость недоступна. Списки пагинируются параметрами `page` (≥ 1) и `pageSize` (1–100, по умолчанию 50); ответ имеет вид `{ items, page, pageSize, total }`.
-
-### Partners — `http://localhost:5101`
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `POST` | `/users` | Добавить пользователя: `{ "externalId": "u2", "parentExternalId": "u1" }` (родитель необязателен). 201 — создан; 200 — уже есть с тем же родителем; 409 — уже есть с другим родителем |
-| `PUT` | `/users/{id}/parent` | Установить или сменить партнёра: `{ "parentExternalId": "u5" }`. Поддерево переезжает целиком; цикл даёт 409 |
-| `GET` | `/users/{id}/ancestors` | Ветка вверх: `[{ externalId, level }]`, где level 1 — прямой партнёр |
-| `GET` | `/users/{id}/descendants` | Ветка вниз: `[{ externalId, parentExternalId, level }]` |
-
-`externalId` пользователя — `^[A-Za-z0-9_]{1,64}$`.
-
-### Activity — `http://localhost:5102`
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `POST` | `/events` | Принять событие: `{ "externalEventId": "e1", "userExternalId": "u4", "profit": 100.5 }`. 201 — принято; 200 — повтор с теми же данными; 409 — тот же id с другими данными |
-| `GET` | `/users/{id}/events` | События пользователя без комиссий |
-| `GET` | `/events/{eventId}` | Деталь события со всеми комиссиями: кому, сколько, по какой схеме, выплачено ли |
-
-### Commission — `http://localhost:5103`
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `GET` | `/admin/scheme` | Текущая схема |
-| `POST` | `/admin/scheme` | Переключить схему: `{ "schemeType": "Fibonacci" }` или `"Linear"`. Действует только на новые расчёты |
-
-### Wallet — `http://localhost:5104`
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `GET` | `/users/{id}/balance` | Баланс — сумма **выплаченных** комиссий |
-| `GET` | `/users/{id}/payouts` | История выплат: какие комиссии и когда выплачены |
-
-### Пример
+Пример вручную:
 
 ```bash
 curl -X POST localhost:5101/users -H 'Content-Type: application/json' -d '{"externalId":"alice"}'
@@ -109,62 +38,59 @@ curl -X POST localhost:5102/events -H 'Content-Type: application/json' \
   -d '{"externalEventId":"ev-1","userExternalId":"carol","profit":200}'
 
 curl localhost:5102/events/ev-1          # Linear: bob — 2 (L1), alice — 4 (L2)
-sleep 20
-curl localhost:5104/users/alice/balance  # 4 после выплаты
+sleep 20                                 # выплата в compose — раз в 15 секунд
+curl localhost:5104/users/alice/balance  # 4
 ```
 
-### Эксплуатация
+Наружу публикуются только REST сервисов, RabbitMQ и дашборд; базы данных и gRPC доступны лишь внутри сети compose.
 
-У каждого сервиса есть эндпоинты:
+## Наблюдаемость
 
-- `/health/live` — процесс жив;
-- `/health/ready` — зависимости доступны (у Activity — только БД, см. ARCHITECTURE.md);
-- `/metrics` — метрики в формате Prometheus.
+| Что | Где |
+|---|---|
+| Aspire Dashboard — трейсы, логи, метрики | http://localhost:18888 |
+| RabbitMQ management (`guest` / `guest`) | http://localhost:15672 |
+| Health каждого сервиса | `/health/live`, `/health/ready` |
+| Метрики в формате Prometheus | `/metrics` |
 
-Логи структурированные (Serilog), в каждой строке есть сервис и trace id.
+Aspire Dashboard — отдельный контейнер в compose, только UI телеметрии. Сервисы отправляют в него данные по OpenTelemetry (OTLP, переменная `OTEL_EXPORTER_OTLP_ENDPOINT`):
+
+- **Traces** — путь события одной цепочкой через все сервисы: REST → outbox → RabbitMQ → gRPC → БД. Фоновый опрос outbox в трейсы не попадает.
+- **Structured logs** — логи всех сервисов с фильтром по сервису, уровню и trace id; из лога можно перейти в его трейс.
+- **Metrics** — HTTP, gRPC, MassTransit, .NET runtime, счётчики выплат Wallet.
+
+Трейс события из примера выше (**Traces** → `Activity.Api: POST /events`):
+
+![Трейс события в Aspire Dashboard](docs/images/trace-flow.png)
+
+Телеметрия хранится в памяти контейнера и пропадает при его перезапуске; дашборд открыт без входа — только для локального запуска.
 
 ## Разработка
 
-Нужен .NET SDK 8. Сервисы подключают `BuildingBlocks.Contracts` пакетом из локального feed `local-nuget-feed/`, поэтому перед первой сборкой пакет нужно собрать:
+Нужен .NET SDK 8. Сервисы подключают `BuildingBlocks.Contracts` пакетом из локального feed, поэтому перед первой сборкой его нужно собрать:
 
 ```bash
-./scripts/pack-contracts.sh      # Windows: ./scripts/pack-contracts.ps1
+./scripts/pack-contracts.sh    # Windows: scripts\pack-contracts.ps1
 dotnet build ACS.sln
 dotnet test ACS.sln
 ```
 
-Unit-тесты покрывают:
-
-- расчёт комиссий по обеим схемам, округление, переполнение, расширяемость схем (`Commission.Tests`);
-- дерево и use case'ы Partners (`Partners.Tests`);
-- доменные правила Activity и Wallet.
-
-Чтобы запустить сервис вне Docker, поднимите в compose только инфраструктуру и запустите сервис с `ASPNETCORE_ENVIRONMENT=Development`. `appsettings.Development.json` ожидает Postgres на `localhost:5433`, RabbitMQ — на `localhost:5672`. REST-порты — 5101–5104, gRPC — 6101 и 6103; адреса gRPC задаются через `Partners__GrpcAddress` и `Commission__GrpcAddress`.
-
-Миграции EF Core применяются при старте сервиса. Новая миграция создаётся так:
-
-```bash
-dotnet ef migrations add <Name> -p src/Services/<Service>/<Service>.Api -o Infrastructure/Migrations
-```
-
-## Структура
+Unit-тесты покрывают расчёт комиссий по обеим схемам, дерево партнёров и доменные правила сервисов. Миграции EF Core применяются при старте. Для запуска сервиса вне Docker есть `appsettings.Development.json` (Postgres на `localhost:5433`, RabbitMQ на `localhost:5672`).
 
 ```text
-src/BuildingBlocks/Contracts        события ProfitPosted, CommissionAccrued, CommissionPaid (NuGet-пакет)
-src/BuildingBlocks/ServiceDefaults  логи, трейсинг, метрики, health, ошибки, MassTransit + outbox, миграции, resilience
-src/Services/<Service>/<Service>.Api  Domain / Application / Infrastructure / Api
-protos/                             gRPC-контракты
-tests/<Service>.Tests               unit-тесты
-scripts/                            упаковка контрактов, сквозная проверка
+src/BuildingBlocks/Contracts         события ProfitPosted, CommissionAccrued, CommissionPaid
+src/BuildingBlocks/ServiceDefaults   логи, телеметрия, health, ошибки, MassTransit + outbox, миграции
+src/Services/<Service>               сервис (Domain / Application / Infrastructure / Api) и его README
+protos/                              gRPC-контракты
+tests/                               unit-тесты
+scripts/                             упаковка контрактов, сквозная проверка
 ```
 
 ## Допущения
 
-- Событие содержит `ExternalId` владельца, `ExternalId` события и `Profit`. Время приёма ставит сервис.
-- Партнёрскую связь можно менять. Уже начисленные комиссии при смене связи или схемы не пересчитываются.
-- Глубина дерева искусственно не ограничена (Postgres `ltree`), хотя ТЗ разрешает ограничить её 10 уровнями.
-- Суммы — `numeric(18,4)`. Комиссия округляется до 4 знаков по правилу «от нуля»; комиссия, округлившаяся до 0, не создаётся.
-- Фибоначчи: F(1)=1, F(2)=1, F(3)=2, F(4)=3, F(5)=5…
-- Схема применяется в момент расчёта комиссии, а не в момент приёма события. Событие, принятое прямо перед переключением, может быть рассчитано уже по новой схеме; в самой комиссии записана применённая схема.
-- Аутентификация и авторизация (включая админский эндпоинт) — задача API Gateway, который в объём решения не входит.
-- Activity не проверяет существование пользователя. Событие по неизвестному пользователю не даст комиссий: после повторов его сообщение уйдёт в `_error`-очередь Commission.
+- Событие содержит id владельца, id события и `Profit`; время приёма ставит сервис.
+- Партнёра можно сменить; начисленные комиссии при смене партнёра или схемы не пересчитываются.
+- Схема применяется в момент расчёта комиссии и записывается в каждую комиссию.
+- Глубина дерева не ограничена (Postgres `ltree`), хотя ТЗ допускает лимит в 10 уровней.
+- Суммы — `numeric(18,4)`.
+- Аутентификация и авторизация — на стороне API Gateway, вне объёма решения.
