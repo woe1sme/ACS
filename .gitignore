@@ -1,0 +1,54 @@
+## .NET / Visual Studio / Rider
+bin/
+obj/
+out/
+[Dd]ebug/
+[Rr]elease/
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Rider
+.idea/
+*.iml
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!local-nuget-feed/.gitkeep
+
+## Test results
+[Tt]est[Rr]esult*/
+*.trx
+coverage*/
+*.coverage
+*.coveragexml
+
+## Build artifacts
+artifacts/
+*.dll
+*.exe
+*.pdb
+
+## EF Core
+*.db
+*.db-shm
+*.db-wal
+
+## OS junk
+.DS_Store
+Thumbs.db
+
+## Environment / secrets
+*.env
+.env.local
+appsettings.*.local.json
+
+## Local tooling
+Claude outputs/
+_transfer/

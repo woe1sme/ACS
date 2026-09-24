@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>BuildingBlocks.Contracts</AssemblyName>
+    <RootNamespace>BuildingBlocks.Contracts</RootNamespace>
+    <PackageId>BuildingBlocks.Contracts</PackageId>
+    <Version>1.0.0</Version>
+    <Description>Message contracts shared by ACS services.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+</Project>

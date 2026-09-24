@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/.vs/
+.git/
+docs/
+tests/
+_transfer/
+local-nuget-feed/*.nupkg

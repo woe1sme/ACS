@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+option csharp_namespace = "Acs.Protos.Commission";
+
+package acs.commission.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service Commission {
+  rpc GetCommissionsForEvent (GetCommissionsForEventRequest) returns (GetCommissionsForEventResponse);
+}
+
+message GetCommissionsForEventRequest {
+  string event_external_id = 1;
+}
+
+message CommissionItem {
+  string commission_id = 1;
+  string beneficiary_external_id = 2;
+  int32 level = 3;
+  // Decimal in invariant culture, e.g. "12.3400".
+  string amount = 4;
+  string scheme_type = 5;
+  google.protobuf.Timestamp calculated_at = 6;
+  bool is_paid = 7;
+  // Unset when the commission is not paid.
+  google.protobuf.Timestamp paid_at = 8;
+}
+
+message GetCommissionsForEventResponse {
+  repeated CommissionItem commissions = 1;
+}

@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option csharp_namespace = "Acs.Protos.Partners";
+
+package acs.partners.v1;
+
+service Partners {
+  rpc GetAncestors (GetAncestorsRequest) returns (GetAncestorsResponse);
+}
+
+message GetAncestorsRequest {
+  string user_external_id = 1;
+}
+
+message Ancestor {
+  string external_id = 1;
+  int32 level = 2;
+}
+
+message GetAncestorsResponse {
+  repeated Ancestor ancestors = 1;
+}
