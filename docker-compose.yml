@@ -18,6 +18,9 @@ x-api: &api
     retries: 30
     start_period: 10s
 
+x-otel-env: &otel-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://dashboard:18889
+
 x-rabbit-env: &rabbit-env
   RabbitMq__Host: rabbitmq
   RabbitMq__Username: guest
@@ -59,10 +62,18 @@ services:
       timeout: 5s
       retries: 30
 
+  dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.5
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "18888:18888"
+
   partners-api:
     <<: *api
     build: { context: ., dockerfile: src/Services/Partners/Partners.Api/Dockerfile }
     environment:
+      <<: *otel-env
       ConnectionStrings__Partners: Host=partners-db;Database=partners;Username=postgres;Password=postgres
     ports: ["5101:8080"]
     depends_on:
@@ -72,7 +83,7 @@ services:
     <<: *api
     build: { context: ., dockerfile: src/Services/Commission/Commission.Api/Dockerfile }
     environment:
-      <<: *rabbit-env
+      <<: [*rabbit-env, *otel-env]
       ConnectionStrings__Commission: Host=commission-db;Database=commission;Username=postgres;Password=postgres
       Partners__GrpcAddress: http://partners-api:8081
     ports: ["5103:8080"]
@@ -85,7 +96,7 @@ services:
     <<: *api
     build: { context: ., dockerfile: src/Services/Activity/Activity.Api/Dockerfile }
     environment:
-      <<: *rabbit-env
+      <<: [*rabbit-env, *otel-env]
       ConnectionStrings__Activity: Host=activity-db;Database=activity;Username=postgres;Password=postgres
       Commission__GrpcAddress: http://commission-api:8081
     ports: ["5102:8080"]
@@ -98,7 +109,7 @@ services:
     <<: *api
     build: { context: ., dockerfile: src/Services/Wallet/Wallet.Api/Dockerfile }
     environment:
-      <<: *rabbit-env
+      <<: [*rabbit-env, *otel-env]
       ConnectionStrings__Wallet: Host=wallet-db;Database=wallet;Username=postgres;Password=postgres
       Payout__Interval: "00:00:15"
     ports: ["5104:8080"]

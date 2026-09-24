@@ -18,7 +18,13 @@
 ```bash
 docker compose up --build -d
 docker compose ps          # все контейнеры должны стать healthy
-./scripts/smoke-test.sh    # сквозная проверка (bash, curl, python3)
+./scripts/smoke-test.sh    # сквозная проверка: bash + curl + python
+```
+
+На Windows — PowerShell-версия той же проверки (ничего ставить не нужно):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\smoke-test.ps1
 ```
 
 Сквозная проверка строит цепочку из пяти пользователей и проверяет:
@@ -34,9 +40,22 @@ docker compose ps          # все контейнеры должны стать
 Наружу публикуются порты:
 
 - 5101–5104 — REST сервисов;
-- 5672 и 15672 — RabbitMQ (management UI: `guest` / `guest`).
+- 5672 и 15672 — RabbitMQ (management UI: `guest` / `guest`);
+- 18888 — Aspire Dashboard.
 
 Базы данных и gRPC-порты наружу не публикуются.
+
+## Наблюдение за системой
+
+**Aspire Dashboard** — http://localhost:18888. Это отдельный контейнер в том же compose (только UI телеметрии, не оркестратор): сервисы отправляют в него трейсы, логи и метрики по OpenTelemetry (OTLP, переменная `OTEL_EXPORTER_OTLP_ENDPOINT`).
+
+- **Traces** — одно событие видно одной цепочкой: `POST /events` в Activity → outbox → RabbitMQ → Commission (consume, gRPC `GetAncestors` в Partners, запросы в БД) → `CommissionAccrued` → Wallet. Фоновый опрос БД (доставка outbox) в трейсы не попадает, чтобы не засорять список.
+- **Structured logs** — логи всех сервисов с фильтром по сервису, уровню и trace id; из строки лога можно перейти в её трейс.
+- **Metrics** — HTTP, gRPC, MassTransit, .NET runtime, счётчики выплат Wallet.
+
+Чтобы посмотреть путь события: запустите сквозную проверку (или отправьте `POST /events`), откройте **Traces** и выберите трейс `Activity.Api: POST /events`.
+
+Телеметрия хранится в памяти контейнера и пропадает при его перезапуске. Дашборд открыт без входа — только для локального запуска.
 
 ## API
 

@@ -3,6 +3,7 @@
 # Builds a chain root <- p1 <- p2 <- p3 <- owner, posts events under both schemes and checks
 # commissions, idempotency, the payout and the wallet balance.
 set -euo pipefail
+trap 'echo "FAIL: unexpected error at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 PARTNERS=${PARTNERS:-http://localhost:5101}
 ACTIVITY=${ACTIVITY:-http://localhost:5102}
@@ -12,9 +13,23 @@ RUN=${RUN:-$(date +%s)}
 JSON=(-H "Content-Type: application/json")
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
-status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-expect() { local want=$1; shift; local got; got=$(status "$@"); [[ "$got" == "$want" ]] || fail "expected $want, got $got for $*"; }
-json() { python3 -c "import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1"; }
+status() { curl -s -o /dev/null -w '%{http_code}' "$@" || true; }
+expect() {
+  local want=$1; shift
+  local got; got=$(status "$@")
+  if [[ "$got" == "000" ]]; then
+    local url; for url in "$@"; do [[ "$url" == http* ]] && break; done
+    fail "cannot reach $url - are all containers healthy? (docker compose ps)"
+  fi
+  [[ "$got" == "$want" ]] || fail "expected $want, got $got for $*"
+}
+PY=""
+for candidate in python3 python py; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import json" >/dev/null 2>&1; then PY=$candidate; break; fi
+done
+[[ -n "$PY" ]] || fail "python is required (python3/python/py). On Windows use scripts/smoke-test.ps1 instead."
+command -v curl >/dev/null 2>&1 || fail "curl is required"
+json() { "$PY" -c "import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1" | tr -d '\r'; }
 
 u() { echo "${1}_${RUN}"; }
 echo "Run id: $RUN"

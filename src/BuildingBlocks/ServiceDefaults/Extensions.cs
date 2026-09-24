@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using BuildingBlocks.ServiceDefaults.Errors;
+using BuildingBlocks.ServiceDefaults.Telemetry;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -23,6 +25,7 @@ public static class Extensions
     public static WebApplicationBuilder AddServiceDefaults(this WebApplicationBuilder builder)
     {
         var serviceName = builder.Environment.ApplicationName;
+        var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
 
         builder.Services.AddSerilog((services, logger) => logger
             .ReadFrom.Configuration(builder.Configuration)
@@ -31,11 +34,18 @@ public static class Extensions
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
             .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
+            .MinimumLevel.Override("Polly", LogEventLevel.Warning)
             .Filter.ByExcluding("SourceContext = 'Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware'")
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Service", serviceName)
             .WriteTo.Console(outputTemplate:
-                "[{Timestamp:HH:mm:ss} {Level:u3}] {Service} {TraceId} {SourceContext}: {Message:lj}{NewLine}{Exception}"));
+                "[{Timestamp:HH:mm:ss} {Level:u3}] {Service} {TraceId} {SourceContext}: {Message:lj}{NewLine}{Exception}")
+            .WriteTo.Conditional(_ => !string.IsNullOrWhiteSpace(otlpEndpoint), sink => sink.OpenTelemetry(o =>
+            {
+                o.Endpoint = otlpEndpoint!;
+                o.Protocol = Serilog.Sinks.OpenTelemetry.OtlpProtocol.Grpc;
+                o.ResourceAttributes = new Dictionary<string, object> { ["service.name"] = serviceName };
+            })));
 
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource => resource.AddService(serviceName))
@@ -47,14 +57,16 @@ public static class Extensions
                 .AddMeter(serviceName)
                 .AddPrometheusExporter())
             .WithTracing(tracing => tracing
+                .SetSampler(new ParentBasedSampler(new SkipBackgroundClientSpansSampler()))
                 .AddAspNetCoreInstrumentation(o => o.Filter = ctx =>
                     !ctx.Request.Path.StartsWithSegments("/health") && !ctx.Request.Path.StartsWithSegments("/metrics"))
                 .AddHttpClientInstrumentation()
                 .AddGrpcClientInstrumentation()
+                .AddNpgsql()
                 .AddSource("MassTransit")
                 .AddSource(serviceName));
 
-        if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         {
             builder.Services.AddOpenTelemetry().UseOtlpExporter();
         }
