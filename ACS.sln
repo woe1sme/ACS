@@ -9,6 +9,14 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Contracts", "src\BuildingBl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceDefaults", "src\BuildingBlocks\ServiceDefaults\ServiceDefaults.csproj", "{B30A39F5-1915-493C-BF51-9E70B968EFBD}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Services", "Services", "{D2FCC20C-7072-4722-8051-20D1EA497E30}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Partners.Api", "src\Services\Partners\Partners.Api\Partners.Api.csproj", "{F20C5B0D-9694-4242-BDC9-CEAF09F88967}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{6AC2BB26-6A2E-4DFE-989A-03280502C337}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Partners.Tests", "tests\Partners.Tests\Partners.Tests.csproj", "{A4E3B262-E8D8-4406-A5C1-8066189E98F7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +34,19 @@ Global
 		{B30A39F5-1915-493C-BF51-9E70B968EFBD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B30A39F5-1915-493C-BF51-9E70B968EFBD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B30A39F5-1915-493C-BF51-9E70B968EFBD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F20C5B0D-9694-4242-BDC9-CEAF09F88967}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F20C5B0D-9694-4242-BDC9-CEAF09F88967}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F20C5B0D-9694-4242-BDC9-CEAF09F88967}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F20C5B0D-9694-4242-BDC9-CEAF09F88967}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A4E3B262-E8D8-4406-A5C1-8066189E98F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A4E3B262-E8D8-4406-A5C1-8066189E98F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A4E3B262-E8D8-4406-A5C1-8066189E98F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A4E3B262-E8D8-4406-A5C1-8066189E98F7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{5CF25C6B-A7DD-478A-AC07-B16A39D4BCE0} = {E4E92F30-2F92-4D54-BB90-893FE5D39920}
 		{B30A39F5-1915-493C-BF51-9E70B968EFBD} = {E4E92F30-2F92-4D54-BB90-893FE5D39920}
+		{F20C5B0D-9694-4242-BDC9-CEAF09F88967} = {D2FCC20C-7072-4722-8051-20D1EA497E30}
+		{A4E3B262-E8D8-4406-A5C1-8066189E98F7} = {6AC2BB26-6A2E-4DFE-989A-03280502C337}
 	EndGlobalSection
 EndGlobal
