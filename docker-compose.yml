@@ -1,0 +1,113 @@
+x-db: &db
+  image: postgres:16
+  environment: &db-env
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+  healthcheck: &db-health
+    interval: 5s
+    timeout: 5s
+    retries: 20
+
+x-api: &api
+  restart: unless-stopped
+  stop_grace_period: 30s
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+    interval: 5s
+    timeout: 3s
+    retries: 30
+    start_period: 10s
+
+x-rabbit-env: &rabbit-env
+  RabbitMq__Host: rabbitmq
+  RabbitMq__Username: guest
+  RabbitMq__Password: guest
+
+services:
+  partners-db:
+    <<: *db
+    environment: { <<: *db-env, POSTGRES_DB: partners }
+    healthcheck: { <<: *db-health, test: ["CMD-SHELL", "pg_isready -U postgres -d partners"] }
+    volumes: [partners-db-data:/var/lib/postgresql/data]
+
+  activity-db:
+    <<: *db
+    environment: { <<: *db-env, POSTGRES_DB: activity }
+    healthcheck: { <<: *db-health, test: ["CMD-SHELL", "pg_isready -U postgres -d activity"] }
+    volumes: [activity-db-data:/var/lib/postgresql/data]
+
+  commission-db:
+    <<: *db
+    environment: { <<: *db-env, POSTGRES_DB: commission }
+    healthcheck: { <<: *db-health, test: ["CMD-SHELL", "pg_isready -U postgres -d commission"] }
+    volumes: [commission-db-data:/var/lib/postgresql/data]
+
+  wallet-db:
+    <<: *db
+    environment: { <<: *db-env, POSTGRES_DB: wallet }
+    healthcheck: { <<: *db-health, test: ["CMD-SHELL", "pg_isready -U postgres -d wallet"] }
+    volumes: [wallet-db-data:/var/lib/postgresql/data]
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  partners-api:
+    <<: *api
+    build: { context: ., dockerfile: src/Services/Partners/Partners.Api/Dockerfile }
+    environment:
+      ConnectionStrings__Partners: Host=partners-db;Database=partners;Username=postgres;Password=postgres
+    ports: ["5101:8080"]
+    depends_on:
+      partners-db: { condition: service_healthy }
+
+  commission-api:
+    <<: *api
+    build: { context: ., dockerfile: src/Services/Commission/Commission.Api/Dockerfile }
+    environment:
+      <<: *rabbit-env
+      ConnectionStrings__Commission: Host=commission-db;Database=commission;Username=postgres;Password=postgres
+      Partners__GrpcAddress: http://partners-api:8081
+    ports: ["5103:8080"]
+    depends_on:
+      commission-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      partners-api: { condition: service_healthy }
+
+  activity-api:
+    <<: *api
+    build: { context: ., dockerfile: src/Services/Activity/Activity.Api/Dockerfile }
+    environment:
+      <<: *rabbit-env
+      ConnectionStrings__Activity: Host=activity-db;Database=activity;Username=postgres;Password=postgres
+      Commission__GrpcAddress: http://commission-api:8081
+    ports: ["5102:8080"]
+    depends_on:
+      activity-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      commission-api: { condition: service_healthy }
+
+  wallet-api:
+    <<: *api
+    build: { context: ., dockerfile: src/Services/Wallet/Wallet.Api/Dockerfile }
+    environment:
+      <<: *rabbit-env
+      ConnectionStrings__Wallet: Host=wallet-db;Database=wallet;Username=postgres;Password=postgres
+      Payout__Interval: "00:00:15"
+    ports: ["5104:8080"]
+    depends_on:
+      wallet-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+volumes:
+  partners-db-data:
+  activity-db-data:
+  commission-db-data:
+  wallet-db-data:
